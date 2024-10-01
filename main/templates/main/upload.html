@@ -1,0 +1,192 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="container my-3">
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card shadow">
+                <div class="card-header text-center">
+                    Upload XLSX
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <select class="form-select" name="code" id="code">
+                            {% for result in results %}
+                            <option value="{{ result.code }}">{{ result.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="text-center" id="drop-container">
+                        <label for="file-input">
+                            <i class="bi bi-filetype-xls display-1"></i>
+                            <input class="d-none" type="file" id="file-input">
+                        </label>
+                        <p id="filename"></p>
+                    </div>
+                    <div class="mb-3 text-center">
+                        <button class="btn btn-success btn-lg" onclick="upload()">submit</button>
+                    </div>
+                </div>
+                <div class="card-footer bg-white">
+                    <p class="form-text">
+                        Upload excel sheet containing USN of student with column header <b>usn</b>
+                    </p>
+                </div>
+            </div>
+
+        </div>
+        <div class="col-md-4">
+            
+            <div class="mt-3">
+                <div class="card">
+                    <div class="card-body">
+                        <ul class="list-group">
+                            <li class="list-group-item">Total students: <span id="total"></span></li>
+                            <li class="list-group-item">Current index: <span id="current_index"></span></li>
+                            <li class="list-group-item"><progress id="progress-bar" style="width: 100%;" min="0" max="0" value="0"></progress></span></li>
+                            
+                            <li class="list-group-item">currect usn: <span id="usn"></span></li>
+                            <li class="list-group-item">captcha: <br><img alt="" id="captcha"></li>
+                            <li class="list-group-item">prediction: <span id="pred-captcha"></span></li>
+                            <li class="list-group-item">
+                                <span id="error-message" class="text-danger d-none"></span>
+                                <span id="success-message" class="text-success d-none"></span>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div class="card-body">
+                        <p>Student Details: </p>
+                        <table class="table table-bordered">
+                            <tr><td>Name</td><td id="student-name"></td></tr>
+                            <tr><td>USN</td><td id="student-usn"></td></tr>
+                        </table>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4"></div>
+    </div>
+
+</div>
+<script>
+    const usnContainer = document.getElementById("usn");
+    const captchaContainer = document.getElementById("captcha");
+
+    const dropContainer = document.getElementById("drop-container");
+    const fileInput = document.getElementById("file-input");
+    const codeInput = document.getElementById("code");
+    const captchaPrediction = document.getElementById("pred-captcha");
+
+    const errorMessage = document.getElementById("error-message");
+    const successMessage = document.getElementById("success-message");
+
+    const studentName = document.getElementById("student-name");
+    const studentUSN = document.getElementById("student-usn");
+
+
+    const progressBar = document.getElementById("progress-bar");
+    const totalStudentsElement = document.getElementById("total");
+    const currentIndexElement = document.getElementById("current_index");
+
+
+    function showMessage(type, message){
+        if(type === "success"){
+            errorMessage.classList.add("d-none")
+            successMessage.classList.remove("d-none");
+            successMessage.innerHTML = message;
+        }
+        else if(type === "error"){
+            errorMessage.classList.remove("d-none")
+            successMessage.classList.add("d-none");
+            errorMessage.innerHTML = message;
+        }
+        else{
+            document.getElementById(type).innerHTML = message
+        }
+    }
+
+
+    dropContainer.ondragover = dropContainer.ondragenter = function(evt) {
+        evt.preventDefault();
+    };
+
+
+    dropContainer.ondrop =  function(evt) {
+        fileInput.files = evt.dataTransfer.files;
+        evt.preventDefault();
+    };
+
+    fileInput.addEventListener("change", function(event) {
+    if (fileInput.files.length > 0) {
+        const selectedFile = fileInput.files[0];
+        console.log("File selected:", selectedFile.name);
+        document.getElementById("filename").innerHTML = selectedFile.name;
+
+    } else {
+        console.log("No file selected");
+    }
+});
+
+    const url = 'ws://' + window.location.host + '/ws/upload/';
+    const ws = new WebSocket(url);
+    
+    function upload() {
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+        
+        reader.onload = function(event) {
+            const fileData = event.target.result;
+            
+            // Create an object to send both the file data and the code
+            const data = {
+                code: codeInput.value,
+                file_name: file.name,
+                file_data: fileData
+            };
+
+            ws.send(JSON.stringify(data));
+        };
+
+        // Read the file as binary string (or array buffer if needed)
+        reader.readAsDataURL(file); // You can use readAsBinaryString or readAsArrayBuffer as well
+    }
+
+    ws.addEventListener("open", function(e) {
+        console.log('WEB SOCKET OPENED SUCCESSFULLY!');
+    });
+
+
+
+    ws.addEventListener("message", function(e) {
+        if (typeof e.data === "string") {
+            const data = JSON.parse(e.data);
+           // Parse the JSON data
+            if (data.type == "usn") usnContainer.innerText = data.message;  // Display the USN in the container
+            else if(data.type === "captcha")captchaPrediction.innerText = data.message;
+            else if(data.type === "error")showMessage("error", data.message);
+            else if(data.type === "success")showMessage("success", data.message);
+            else if(data.type === "student"){
+                const student = JSON.parse(data.message);
+                studentName.innerText = student.name;
+                studentUSN.innerText = student.usn;
+            }
+            else if(data.type === "current_index"){
+                progressBar.value = data.message;
+                showMessage(data.type, data.message);
+            }
+            else if(data.type === "total"){
+                progressBar.max = data.message; 
+                showMessage(data.type, data.message);
+            }
+            // console.log(data.type, data.message)
+        }else{
+            const imageBlob = e.data;  // This is a Blob object
+            const imageUrl = URL.createObjectURL(imageBlob);  // Create a URL for the blob
+            captchaContainer.src = imageUrl;  // Set the image src to display the captcha
+        }
+    });
+</script>
+
+{% endblock content %}
